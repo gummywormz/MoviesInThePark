@@ -1,0 +1,193 @@
+---
+title: "Movies in the Park"
+author: "Paul Alves"
+date: "November 23, 2018"
+output: github_document
+---
+
+This document analyzes different facts about the Movies in the Park series hosted in 2018. This was a series of movie screenings hosted outdoors at a public park. The movie selection varied from classics to modern films. An analysis of the variety of movies available is presented in order to determine the purpose of the events.
+
+## Genres
+
+The following graph lists the number of movies in each genre hosted in the series.
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message = FALSE,warning = FALSE)
+library(tidyverse)
+library(stringr)
+library(curl)
+library(jsonlite)
+library(XML)
+library(httr)
+
+```
+
+```{r, include=FALSE}
+#This chunk is not included because we don't want to use
+#up our queries. You should run this independent of the knit process.
+
+#set up time
+#get titles function
+get_titles <- function(token)
+{
+  base_url <- "https://data.cityofchicago.org/resource/dan6-dh2g.json?"
+  token_param <- "$$app_token="
+  title <- "&$select=title"
+  return(str_c(base_url,token_param,token,title))
+}
+
+#get the list of titles
+socrata_q <- get_titles(getOption("socrataKey"))
+
+con <- curl(socrata_q)
+movie_title <- readLines(con)
+close(con)
+
+
+#start preparing the data 
+#convert form json to data frame
+movie_title <- fromJSON(movie_title)
+#reduce duplicates
+movie_title <- distinct(movie_title)
+
+#prepare the data for url
+#and before you ask, url encoding won't work in this case
+
+#replace all spaces with plus
+movie_title$title <- gsub(" ","+",movie_title$title)
+#get rid of all extra titles in parenthesis
+movie_title$title <- gsub("\\(.+","",movie_title$title)
+#get rid of all extra titles with slashes
+movie_title$title <- gsub("\\/.+","",movie_title$title)
+#get rid of all dots colons and commas and question marks
+movie_title$title <- gsub("\\.","",movie_title$title)
+movie_title$title <- gsub("\\:","",movie_title$title)
+movie_title$title <- gsub("\\,","",movie_title$title)
+movie_title$title <- gsub("\\?","",movie_title$title)
+
+#function for generating api call
+getMovie <- function(title)
+{
+  url <- "http://www.omdbapi.com/?apikey="
+  apikey <- getOption("omdbKey")
+  title_url <-"&t="
+  return(str_c(url,apikey,title_url,title))
+}
+
+#prepare a data frame object for injection
+movies2 <- data.frame()
+
+#go through our titles
+for (i in 1:nrow(movie_title)) {
+#get the data from the api
+con <- curl(getMovie(movie_title$title[[i]]))
+movie_test1 <- readLines(con)
+close(con)
+
+#convert the list to a data frame
+#more gross hacks because lists of lists are evil and bad
+movie_result <- fromJSON(movie_test1) %>%
+  enframe() %>%
+  spread(name,value)
+#bind the rows to combine it
+movies2 <- bind_rows(movies2,movie_result)
+}
+
+#count the genres.
+#More gross hackery afoot because thats how we like it here
+#select the genre column
+genres_begin <- select(movies2,Genre)
+#convert to character column from a list of factors
+genres_begin$Genre <- as.character(genres_begin$Genre)
+#make a new data frame because we need to count multigenres.
+#stringsAsFactors needs to be false or else this breaks
+genres_movies <- data.frame(Genre=character(),stringsAsFactors=FALSE)
+#loop through all the genres
+for (i in 1:nrow(genres_begin)) {
+  
+  #check if the genre is multigenre
+  #grepl doesnt work here for some reason
+  if(str_detect(genres_begin[[i,1]],","))
+  {
+    #split the string. simplify=TRUE is needed or else...you already know
+    item <- str_split(genres_begin[[i,1]],",",simplify = TRUE)
+    
+    for (j in 1:length(item)) {
+      #we need to remove the white space from the start of the string
+      genre_str <- str_squish(item[j])
+      #rbind doesnt like vectors or strings so we convert to data frame
+      genre <- data.frame(Genre = genre_str,stringsAsFactors = FALSE)
+    genres_movies <- rbind(genres_movies,genre)
+  }
+    }
+  else
+  {
+    #otherwise just copy it over
+    genre_str <- str_squish(genres_begin[i,1])
+    genre <- data.frame(Genre = genre_str,stringsAsFactors = FALSE)
+    genres_movies <-  rbind(genres_movies,genre)
+    }
+  
+}
+#count the genres, remove NULL, order
+genre_count <- count(genres_movies,Genre) %>%
+  filter(Genre != "NULL") %>%
+  arrange(n)
+```
+
+
+
+```{r }
+ggplot(genre_count) +
+  geom_col(aes(x = Genre,y = n)) +
+  coord_flip() +
+  ylab("Number of Movies") +
+  ggtitle("Genres of Movies in the Park")
+```
+
+Popular genres included comedy, adventure, and family movies. This makes sense since the movies are more marketed towards families especially with children. There was a war film shown, which turned out to be Wonder Woman. This does not fit with what one would typically think of a war film. The data on the Open Movie Database may not be entirely accurate in this regard. There does not appear to be any unfitting or questionable genres in the data.
+
+## Years
+
+The range of years the movies came out in is also interesting to analyze. 
+
+```{r}
+#get years, remove nulls
+years <- select(movies2,Year) %>% filter(Year != "NULL")
+#convert to numeric
+years$Year <- as.numeric(years$Year)
+#graph it
+ggplot(years) + 
+  geom_boxplot(mapping = aes(y =Year)) +
+  coord_flip()
+```
+
+The resulting graph shows most movies were made between about 1990 to 2018. This means that more of the movies seem to be modern. There are a few outliers earlier on around the 1930s and 40s. This means that the events have a focus on more modern movies. Wonder Woman and Coco for example were played. This makes it attractive to the teen and young adult audience.
+
+## Ratings
+
+In order to determine what audience the movie events are aimed at, a summary of ratings would suffice. Below is a graph showing the ratings.
+
+```{r}
+#get ratings, convert to character, count
+ratings <- select(movies2,Rated)
+ratings$Rated <- as.character(ratings$Rated)
+ratings_count <- count(ratings,Rated)
+
+ggplot(ratings_count) +
+  geom_col(aes(x = Rated,y = n)) +
+  #coord_flip() +
+  ylab("Number of Ratings") +
+  ggtitle("Ratings of Movies in the Park")
+```
+
+PG was the most common rating at 48 movies. PG-13 was the next most popular at 27 movies. Interestingly, the G rating only had 7 movies. The other coulmns are variations of the "Not Rated", which total to about 21 films. A glance at these films seem to be a few earlier films before a rating system was devised, or smaller indie productions. This is interesting as the data now skews the event to gear more towards teenagers and young adults, rather than younger children. This may make sense if the intent of the program was to keep younger adults from getting into trouble by offering movies. This would need to be researched more into the intent of the program.
+
+## Conclusions
+
+The movies seem to be focused on family friendly genres with a modern selection. The ratings however suggest that the aim is more at young adults rather than smaller children. There are a wide variety of higher and unrated movies. The events try to cater to a wide audience while remaining interesting. A further analysis could be done to map location and these attributes as well.
+
+## Session Info
+```{r}
+devtools::session_info()
+```

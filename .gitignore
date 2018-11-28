@@ -32,29 +32,10 @@ vignettes/*.pdf
 *.utf8.md
 *.knit.md
 
-# =========================
-# Operating System Files
-# =========================
-
-# Windows
-# =========================
-
-# Windows thumbnail cache files
-Thumbs.db
-ehthumbs.db
-ehthumbs_vista.db
-
-# Folder config file
-Desktop.ini
-
-# Recycle Bin used on file shares
-$RECYCLE.BIN/
-
-# Windows Installer files
-*.cab
-*.msi
-*.msm
-*.msp
-
-# Windows shortcuts
-*.lnk
+# Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
+rsconnect/
+.RProfile
+.Rproj.user
+movie_title.txt
+movie_final.txt
+README.html
